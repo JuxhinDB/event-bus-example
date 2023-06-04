@@ -1,0 +1,9 @@
+[package]
+name = "event-bus"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.28.2", features = ["full"] }
+anyhow = "1.0.71"
+async-trait = "0.1.68"
