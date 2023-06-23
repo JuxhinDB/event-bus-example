@@ -2,19 +2,19 @@ use anyhow::Result;
 use event_bus::EventBus;
 use logger_module::Logger;
 use module::{Module, ModuleCtx};
-use worker_module::Worker;
+use network_module::Network;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let event_bus = EventBus::new();
 
-    let logger_ctx = ModuleCtx::new(&event_bus);
+    let logger_ctx = ModuleCtx::new("logger", &event_bus);
     let mut logger = Logger::new(logger_ctx);
 
-    let worker_ctx = ModuleCtx::new(&event_bus);
-    let mut worker = Worker::new(worker_ctx);
+    let network_ctx = ModuleCtx::new("network", &event_bus);
+    let mut network = Network::new(network_ctx);
 
-    tokio::join!(worker.run(), logger.run()).0?;
+    tokio::join!(network.run(), logger.run()).0?;
 
     Ok(())
 }
@@ -81,16 +81,21 @@ mod module {
 
     #[derive(Debug)]
     pub struct ModuleCtx {
+        pub name: String,
         pub sender: broadcast::Sender<Event>,
         pub receiver: broadcast::Receiver<Event>,
     }
 
     impl ModuleCtx {
-        pub fn new(bus: &EventBus) -> Self {
+        pub fn new(name: &str, bus: &EventBus) -> Self {
             let sender = bus.sender.clone();
             let receiver = bus.subscribe();
 
-            ModuleCtx { sender, receiver }
+            ModuleCtx {
+                name: name.to_string(),
+                sender,
+                receiver,
+            }
         }
     }
 }
@@ -102,17 +107,13 @@ mod logger_module {
     use async_trait::async_trait;
 
     pub struct Logger {
-        pub name: String,
         ctx: ModuleCtx,
     }
 
     #[async_trait]
     impl Module for Logger {
         fn new(ctx: ModuleCtx) -> Self {
-            Logger {
-                name: String::from("logger"),
-                ctx,
-            }
+            Logger { ctx }
         }
 
         async fn run(&mut self) -> Result<()> {
@@ -122,7 +123,7 @@ mod logger_module {
                         match e {
                             Ok(event) => {
                                 match event.inner {
-                                    EventKind::StubEvent(message) => println!("{}: received event: {}", &self.name, message),
+                                    EventKind::StubEvent(message) => println!("{}: received event: {}", &self.ctx.name, message),
                                 }
                             },
                             Err(e) => println!("Error: {}", e),
@@ -134,24 +135,20 @@ mod logger_module {
     }
 }
 
-mod worker_module {
+mod network_module {
     use super::event_bus::{Event, EventKind};
     use super::module::{Module, ModuleCtx};
     use anyhow::Result;
     use async_trait::async_trait;
 
-    pub struct Worker {
-        pub name: String,
+    pub struct Network {
         ctx: ModuleCtx,
     }
 
     #[async_trait]
-    impl Module for Worker {
+    impl Module for Network {
         fn new(ctx: ModuleCtx) -> Self {
-            Worker {
-                name: String::from("worker"),
-                ctx,
-            }
+            Network { ctx }
         }
 
         async fn run(&mut self) -> Result<()> {
@@ -162,7 +159,7 @@ mod worker_module {
                 _ = interval.tick() => {
 
                     let event = Event {
-                        module: self.name.to_string(),
+                        module: self.ctx.name.to_string(),
                         inner: EventKind::StubEvent("Completed some work".to_string()),
                     };
                     self.ctx.sender
